@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Bingo</title>
+
+<!-- Czcionki (ładują się z internetu — działają po wgraniu na GitHub Pages) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+
+<!-- Biblioteki (potrzebne tylko w trybie LIVE / do QR). Jeśli się nie załadują, demo i tak działa. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+
+<style>
+/* =========================================================================
+   PALETA — inspiracja drukiem risograficznym: płaskie, mocne kolory,
+   twarde cienie (bez rozmycia), ciepły papier. Sygnaturą jest "pieczątka".
+   ========================================================================= */
+:root{
+  --paper:   #F2EDE1;   /* ciepły papier */
+  --paper-2: #FBF8F1;   /* jaśniejszy papier (karty) */
+  --ink:     #17172B;   /* prawie-czarny atrament */
+  --ink-60:  rgba(23,23,43,.60);
+  --ink-30:  rgba(23,23,43,.28);
+  --ink-12:  rgba(23,23,43,.12);
+  --blue:    #2C43E0;   /* riso niebieski — akcja główna */
+  --pink:    #F0356B;   /* riso różowy — pieczątka / "zrobione" */
+  --yellow:  #FFC53D;   /* riso żółty — pole gratis / wyróżnienia */
+  --green:   #12A67A;   /* bingo */
+  --radius: 14px;
+  --shadow: 4px 4px 0 var(--ink);
+  --shadow-lg: 6px 6px 0 var(--ink);
+}
+
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  font-family:"IBM Plex Sans",system-ui,sans-serif;
+  background:var(--paper);
+  color:var(--ink);
+  line-height:1.5;
+  min-height:100dvh;
+  /* delikatna faktura papieru */
+  background-image:radial-gradient(var(--ink-12) 0.5px, transparent 0.5px);
+  background-size:7px 7px;
+  overflow-x:hidden;
+}
+h1,h2,h3,.display{font-family:"Bricolage Grotesque",sans-serif;font-weight:800;letter-spacing:-.02em;line-height:1.02;margin:0}
+.mono{font-family:"Space Mono",monospace}
+
+/* ---- Layout ---- */
+.wrap{max-width:640px;margin:0 auto;padding:22px 18px 120px}
+.hidden{display:none !important}
+
+/* ---- Przyciski ---- */
+.btn{
+  font-family:"Bricolage Grotesque",sans-serif;font-weight:800;font-size:1.05rem;
+  border:2.5px solid var(--ink);background:var(--blue);color:#fff;
+  padding:14px 20px;border-radius:var(--radius);cursor:pointer;
+  box-shadow:var(--shadow);transition:transform .06s ease, box-shadow .06s ease;
+  width:100%;display:flex;align-items:center;justify-content:center;gap:10px;
+}
+.btn:active{transform:translate(4px,4px);box-shadow:0 0 0 var(--ink)}
+.btn.secondary{background:var(--paper-2);color:var(--ink)}
+.btn.pink{background:var(--pink)}
+.btn.ghost{background:transparent;border-color:transparent;box-shadow:none;color:var(--ink-60);font-weight:600;width:auto;padding:8px 4px;font-family:"IBM Plex Sans",sans-serif}
+.btn.ghost:active{transform:none}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+
+/* ---- Pola formularza ---- */
+label.field{display:block;font-weight:600;font-size:.82rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-60);margin:0 0 6px 2px}
+input[type=text], textarea{
+  width:100%;font-family:inherit;font-size:1.05rem;color:var(--ink);
+  background:var(--paper-2);border:2.5px solid var(--ink);border-radius:var(--radius);
+  padding:14px;box-shadow:var(--shadow);outline:none;
+}
+input[type=text]:focus, textarea:focus{border-color:var(--blue)}
+textarea{min-height:84px;resize:vertical}
+
+/* =========================================================================
+   EKRAN: BLOKADA (zły / brak tokena)
+   ========================================================================= */
+.locked-card{
+  background:var(--paper-2);border:2.5px solid var(--ink);border-radius:var(--radius);
+  box-shadow:var(--shadow-lg);padding:32px 26px;text-align:center;margin-top:14vh;
+}
+.locked-card .qr-emoji{font-size:3.2rem}
+
+/* =========================================================================
+   EKRAN: DOŁĄCZANIE
+   ========================================================================= */
+.eyebrow{font-family:"Space Mono",monospace;font-size:.78rem;letter-spacing:.14em;text-transform:uppercase;color:var(--blue);font-weight:700}
+.hero-title{font-size:clamp(2.6rem,12vw,4rem);margin:6px 0 2px}
+.hero-title .stamped{
+  display:inline-block;color:var(--pink);transform:rotate(-4deg);
+  border:3px solid var(--pink);border-radius:10px;padding:0 10px;
+}
+.join-card{
+  background:var(--paper-2);border:2.5px solid var(--ink);border-radius:var(--radius);
+  box-shadow:var(--shadow-lg);padding:24px 20px;margin-top:26px;
+}
+.note{font-size:.85rem;color:var(--ink-60);margin-top:14px}
+
+/* =========================================================================
+   EKRAN: GRA — nagłówek + plansza
+   ========================================================================= */
+.topbar{
+  position:sticky;top:0;z-index:20;margin:-22px -18px 16px;padding:14px 18px;
+  background:var(--paper);border-bottom:2.5px solid var(--ink);
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  background-image:radial-gradient(var(--ink-12) 0.5px, transparent 0.5px);background-size:7px 7px;
+}
+.topbar .who{overflow:hidden}
+.topbar .who .name{font-family:"Bricolage Grotesque";font-weight:800;font-size:1.15rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topbar .who .sub{font-size:.78rem;color:var(--ink-60)}
+.progress-chip{
+  flex:none;text-align:center;background:var(--yellow);border:2.5px solid var(--ink);
+  border-radius:12px;padding:6px 12px;box-shadow:2px 2px 0 var(--ink);
+}
+.progress-chip.done{background:var(--green);color:#fff}
+.progress-chip .num{font-family:"Space Mono";font-weight:700;font-size:1.5rem;line-height:1}
+.progress-chip .lbl{font-size:.62rem;text-transform:uppercase;letter-spacing:.08em;font-weight:700}
+
+.hint{font-size:.85rem;color:var(--ink-60);text-align:center;margin:0 6px 14px;
+  display:flex;align-items:center;gap:8px;justify-content:center}
+.hint .dot{width:8px;height:8px;border-radius:50%;background:var(--pink);flex:none}
+
+/* Plansza */
+.board{display:grid;gap:8px}
+.tile{
+  position:relative;aspect-ratio:1;background:var(--paper-2);
+  border:2.5px solid var(--ink);border-radius:12px;box-shadow:2px 2px 0 var(--ink);
+  padding:7px;cursor:pointer;overflow:hidden;
+  display:flex;align-items:center;justify-content:center;text-align:center;
+  transition:transform .07s ease, box-shadow .07s ease;
+}
+.tile:active{transform:translate(2px,2px);box-shadow:0 0 0 var(--ink)}
+.tile .task{font-size:clamp(.52rem,2.4vw,.74rem);font-weight:500;line-height:1.15;
+  -webkit-hyphens:auto;hyphens:auto;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical}
+.tile .has-proof{position:absolute;top:5px;right:6px;font-size:.7rem}
+.tile.free{background:var(--yellow)}
+.tile.free .task{font-family:"Bricolage Grotesque";font-weight:800;font-size:.8rem}
+
+/* SYGNATURA: pieczątka na zaliczonym polu */
+.tile.marked .task{opacity:.28}
+.stamp{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  pointer-events:none;
+}
+.stamp svg{width:78%;height:78%;filter:drop-shadow(0 0 0 transparent)}
+.tile.marked .stamp{animation:thunk .32s cubic-bezier(.2,1.4,.5,1) both}
+@keyframes thunk{
+  0%{transform:scale(1.7) rotate(var(--rot,-8deg));opacity:0}
+  60%{transform:scale(.9) rotate(var(--rot,-8deg));opacity:1}
+  100%{transform:scale(1) rotate(var(--rot,-8deg));opacity:1}
+}
+
+/* =========================================================================
+   BOTTOM SHEET (dodawanie dowodu)
+   ========================================================================= */
+.overlay{position:fixed;inset:0;z-index:60;background:rgba(23,23,43,.45);
+  display:flex;align-items:flex-end;justify-content:center;padding:0;
+  opacity:0;pointer-events:none;transition:opacity .2s ease}
+.overlay.open{opacity:1;pointer-events:auto}
+.sheet{
+  width:100%;max-width:640px;background:var(--paper-2);
+  border:2.5px solid var(--ink);border-bottom:none;border-radius:20px 20px 0 0;
+  box-shadow:0 -6px 0 var(--ink);padding:20px 18px calc(22px + env(safe-area-inset-bottom));
+  transform:translateY(100%);transition:transform .24s cubic-bezier(.2,.9,.3,1);
+  max-height:90dvh;overflow-y:auto;
+}
+.overlay.open .sheet{transform:translateY(0)}
+.sheet .grab{width:44px;height:5px;border-radius:3px;background:var(--ink-30);margin:0 auto 14px}
+.sheet .task-title{font-size:1.25rem;margin-bottom:4px}
+.sheet .task-sub{font-size:.82rem;color:var(--ink-60);margin-bottom:18px}
+
+/* Wgrywanie zdjęcia */
+.photo-drop{
+  border:2.5px dashed var(--ink-30);border-radius:var(--radius);background:var(--paper);
+  padding:20px;text-align:center;cursor:pointer;color:var(--ink-60);font-weight:600;
+}
+.photo-drop:active{border-color:var(--blue)}
+.photo-preview{position:relative;border:2.5px solid var(--ink);border-radius:var(--radius);
+  overflow:hidden;box-shadow:var(--shadow)}
+.photo-preview img{width:100%;display:block;max-height:260px;object-fit:cover}
+.photo-preview .remove{position:absolute;top:8px;right:8px;background:var(--pink);color:#fff;
+  border:2px solid var(--ink);border-radius:8px;padding:4px 10px;font-weight:700;cursor:pointer}
+
+/* =========================================================================
+   BINGO — celebracja
+   ========================================================================= */
+.celebrate{position:fixed;inset:0;z-index:80;background:rgba(23,23,43,.55);
+  display:none;align-items:center;justify-content:center;text-align:center;padding:24px}
+.celebrate.show{display:flex;animation:fade .3s both}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+.celebrate .card{background:var(--paper-2);border:3px solid var(--ink);border-radius:20px;
+  box-shadow:var(--shadow-lg);padding:34px 28px;max-width:400px}
+.celebrate h1{font-size:3.4rem;color:var(--pink);transform:rotate(-4deg);
+  border:4px solid var(--pink);border-radius:14px;display:inline-block;padding:2px 18px}
+
+/* =========================================================================
+   ADMIN
+   ========================================================================= */
+.admin-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+.badge{font-family:"Space Mono";font-size:.72rem;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;background:var(--ink);color:var(--paper);padding:4px 10px;border-radius:8px}
+.stat-row{display:flex;gap:10px;margin:14px 0 18px}
+.stat{flex:1;background:var(--paper-2);border:2.5px solid var(--ink);border-radius:12px;
+  box-shadow:2px 2px 0 var(--ink);padding:12px;text-align:center}
+.stat .n{font-family:"Space Mono";font-weight:700;font-size:1.7rem;line-height:1}
+.stat .l{font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-60);font-weight:700}
+
+.share-card{background:var(--paper-2);border:2.5px solid var(--ink);border-radius:var(--radius);
+  box-shadow:var(--shadow);padding:16px;margin-bottom:18px;display:flex;gap:16px;align-items:center}
+.share-card #qrbox{flex:none;width:104px;height:104px;background:#fff;border:2px solid var(--ink);
+  border-radius:8px;display:flex;align-items:center;justify-content:center;padding:6px}
+.share-card #qrbox canvas,.share-card #qrbox img{width:100%;height:100%}
+.share-card .link{font-family:"Space Mono";font-size:.74rem;word-break:break-all;color:var(--ink-60);margin-top:6px}
+
+/* Tabela leaderboard */
+.lb{width:100%;border-collapse:separate;border-spacing:0;background:var(--paper-2);
+  border:2.5px solid var(--ink);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow)}
+.lb th{font-family:"Space Mono";font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;
+  text-align:left;padding:10px 12px;background:var(--ink);color:var(--paper);font-weight:700}
+.lb th.c,.lb td.c{text-align:center}
+.lb td{padding:12px;border-top:2px solid var(--ink-12);font-size:.95rem}
+.lb tr{cursor:pointer}
+.lb tr:active td{background:var(--paper)}
+.lb .rank{font-family:"Space Mono";color:var(--ink-60);font-weight:700}
+.lb .to-go{font-family:"Space Mono";font-weight:700}
+.lb .pill{display:inline-block;font-size:.66rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.05em;padding:3px 8px;border-radius:6px;border:2px solid var(--ink)}
+.lb .pill.bingo{background:var(--green);color:#fff}
+.lb .pill.close{background:var(--yellow)}
+.empty{text-align:center;color:var(--ink-60);padding:40px 20px}
+
+/* Modal: szczegóły uczestnika (admin) */
+.pmodal{position:fixed;inset:0;z-index:70;background:rgba(23,23,43,.45);
+  display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto;
+  opacity:0;pointer-events:none;transition:opacity .2s}
+.pmodal.open{opacity:1;pointer-events:auto}
+.pmodal .box{background:var(--paper-2);border:2.5px solid var(--ink);border-radius:var(--radius);
+  box-shadow:var(--shadow-lg);max-width:560px;width:100%;padding:22px 18px 30px;margin:auto 0}
+.proof-item{border:2px solid var(--ink-12);border-radius:12px;padding:12px;margin-bottom:10px;background:var(--paper)}
+.proof-item .pt{font-weight:600;font-size:.92rem;margin-bottom:6px;display:flex;gap:8px;align-items:flex-start}
+.proof-item .pt .mk{color:var(--green);flex:none}
+.proof-item .pnote{font-size:.9rem;color:var(--ink);white-space:pre-wrap}
+.proof-item .pnote.none{color:var(--ink-30);font-style:italic}
+.proof-item img{width:100%;border:2px solid var(--ink);border-radius:8px;margin-top:8px;display:block}
+
+/* Toast */
+#toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(30px);
+  background:var(--ink);color:var(--paper);padding:12px 20px;border-radius:12px;font-weight:600;
+  z-index:90;opacity:0;transition:all .25s;pointer-events:none;max-width:90vw;text-align:center}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+@media (prefers-reduced-motion: reduce){
+  *{animation-duration:.001s !important;transition-duration:.05s !important}
+}
+</style>
+</head>
+<body>
+
+<!-- ============ EKRAN: BLOKADA ============ -->
+<div id="screen-locked" class="wrap hidden">
+  <div class="locked-card">
+    <div class="qr-emoji">📷</div>
+    <h1 style="font-size:1.8rem;margin:10px 0 8px">Zeskanuj kod QR</h1>
+    <p style="color:var(--ink-60);margin:0">Ta strona otwiera się tylko z kodu QR rozdanego na wydarzeniu.</p>
+  </div>
+</div>
+
+<!-- ============ EKRAN: DOŁĄCZANIE ============ -->
+<div id="screen-join" class="wrap hidden">
+  <div class="eyebrow">Wydarzenie · Bingo</div>
+  <h1 class="hero-title">Zagraj w <span class="stamped">BINGO</span></h1>
+  <p style="color:var(--ink-60);margin:8px 0 0">Wpisz imię i nazwisko, a dostaniesz swoją planszę.</p>
+
+  <div class="join-card">
+    <label class="field" for="joinName">Imię i nazwisko</label>
+    <input id="joinName" type="text" placeholder="np. Anna Kowalska" autocomplete="name" maxlength="60" />
+    <div style="height:16px"></div>
+    <button class="btn" id="joinBtn">Wchodzę do gry →</button>
+    <p class="note">Twój postęp zapisuje się automatycznie na tym urządzeniu i w chmurze. Możesz zamknąć stronę i wrócić — plansza będzie czekać.</p>
+  </div>
+</div>
+
+<!-- ============ EKRAN: GRA ============ -->
+<div id="screen-game" class="wrap hidden">
+  <div class="topbar">
+    <div class="who">
+      <div class="name" id="gName">—</div>
+      <div class="sub" id="gSub">Twoja plansza</div>
+    </div>
+    <div class="progress-chip" id="gChip">
+      <div class="num" id="gToGo">–</div>
+      <div class="lbl">do bingo</div>
+    </div>
+  </div>
+
+  <div class="hint"><span class="dot"></span> Dotknij pola → dodaj dowód → przybij pieczątkę</div>
+  <div class="board" id="board"></div>
+</div>
+
+<!-- ============ BOTTOM SHEET: dowód ============ -->
+<div class="overlay" id="sheetOverlay">
+  <div class="sheet" id="sheet">
+    <div class="grab"></div>
+    <div class="task-title" id="sTask">Zadanie</div>
+    <div class="task-sub" id="sState">Dodaj krótki dowód i przybij pieczątkę.</div>
+
+    <label class="field">Co się wydarzyło? (opcjonalnie)</label>
+    <textarea id="sNote" placeholder="np. Zrobiłem to z Kubą przy scenie"></textarea>
+
+    <div style="height:14px"></div>
+    <label class="field">Zdjęcie-dowód (opcjonalnie)</label>
+    <div id="sPhotoWrap">
+      <div class="photo-drop" id="sPhotoDrop">📸 Dotknij, aby zrobić / wybrać zdjęcie</div>
+      <input type="file" id="sPhotoInput" accept="image/*" capture="environment" class="hidden" />
+    </div>
+
+    <div style="height:20px"></div>
+    <button class="btn pink" id="sStamp">✔ Przybij pieczątkę</button>
+    <div style="height:8px"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <button class="btn ghost" id="sCancel">Anuluj</button>
+      <button class="btn ghost hidden" id="sUndo" style="color:var(--pink)">Cofnij zaliczenie</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ CELEBRACJA BINGO ============ -->
+<div class="celebrate" id="celebrate">
+  <div class="card">
+    <h1>BINGO!</h1>
+    <p style="font-weight:600;margin:16px 0 22px">Masz pełną linię. Poszukaj admina po nagrodę 🎉</p>
+    <button class="btn" onclick="document.getElementById('celebrate').classList.remove('show')">Gram dalej</button>
+  </div>
+</div>
+
+<!-- ============ EKRAN: ADMIN ============ -->
+<div id="screen-admin" class="wrap hidden">
+  <div class="admin-head">
+    <h1 style="font-size:1.7rem">Panel admina</h1>
+    <span class="badge" id="modeBadge">tryb</span>
+  </div>
+
+  <div class="stat-row">
+    <div class="stat"><div class="n" id="stPlayers">0</div><div class="l">Uczestników</div></div>
+    <div class="stat"><div class="n" id="stBingo">0</div><div class="l">Ma bingo</div></div>
+    <div class="stat"><div class="n" id="stClose">0</div><div class="l">Blisko (≤1)</div></div>
+  </div>
+
+  <div class="share-card">
+    <div id="qrbox"><span style="font-size:.7rem;color:var(--ink-60)">QR</span></div>
+    <div style="min-width:0">
+      <div style="font-weight:700">Kod QR dla graczy</div>
+      <div style="font-size:.82rem;color:var(--ink-60)">Pokaż go na wydarzeniu — po zeskanowaniu gracz wpisuje imię i gra.</div>
+      <div class="link" id="joinLink">—</div>
+    </div>
+  </div>
+
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+    <h2 style="font-size:1.15rem">Ranking</h2>
+    <button class="btn ghost" id="refreshBtn">↻ Odśwież</button>
+  </div>
+  <table class="lb">
+    <thead><tr>
+      <th style="width:34px">#</th><th>Uczestnik</th>
+      <th class="c" style="width:64px">Zalicz.</th>
+      <th class="c" style="width:78px">Do bingo</th>
+      <th class="c" style="width:70px">Status</th>
+    </tr></thead>
+    <tbody id="lbBody"></tbody>
+  </table>
+  <div id="lbEmpty" class="empty hidden">Jeszcze nikt nie dołączył. Gdy gracze wejdą przez QR, pojawią się tutaj.</div>
+</div>
+
+<!-- ============ MODAL: szczegóły uczestnika ============ -->
+<div class="pmodal" id="pmodal">
+  <div class="box">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:4px">
+      <h2 id="pmName" style="font-size:1.5rem">Uczestnik</h2>
+      <button class="btn ghost" id="pmClose" style="font-size:1.4rem;padding:0 6px">✕</button>
+    </div>
+    <div id="pmMeta" style="color:var(--ink-60);font-size:.85rem;margin-bottom:16px"></div>
+    <div id="pmProofs"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* =========================================================================
+   1) KONFIGURACJA  ← tu wpisujesz swoje dane
+   =========================================================================
+   • Zostaw SUPABASE_URL puste  →  TRYB DEMO (dane tylko na tym urządzeniu,
+     świetne do testów: otwórz plik dwuklikiem i graj).
+   • Wpisz dane z Supabase       →  TRYB LIVE (wspólna baza, admin widzi
+     wszystkich graczy z różnych telefonów, zdjęcia w chmurze).
+*/
+const CONFIG = {
+  SUPABASE_URL:      "",            // np. "https://abcd1234.supabase.co"
+  SUPABASE_ANON_KEY: "",            // klucz "anon public" z Supabase
+
+  PLAYER_TOKEN: "graj-2026",        // token w linku/QR dla GRACZY
+  ADMIN_TOKEN:  "panel-7Kq9mx",     // token w linku/QR dla ADMINA (trzymaj w tajemnicy!)
+  ADMIN_PASSWORD: "",               // opcjonalne dodatkowe hasło do panelu (puste = brak)
+
+  GRID: 5,                          // rozmiar planszy (5 = 5x5)
+  FREE_CENTER: true,                // darmowe pole "GRATIS" na środku
+};
+
+/* Pula zadań (na razie przykładowe — podmień na swoje).
+   Losujemy z niej planszę dla każdego gracza. */
+const TASKS = [
+  "Poznaj kogoś, kto urodził się w innym miesiącu niż Ty",
+  "Znajdź osobę, która była dziś w więcej niż 3 miejscach",
+  "Zrób selfie z kimś w czapce",
+  "Znajdź kogoś, kto ma tego samego patrona telefonu (Android/iOS)",
+  "Poznaj osobę, która mówi w 3 językach",
+  "Znajdź kogoś, kto lubi tę samą muzykę co Ty",
+  "Zdobądź autograf od organizatora",
+  "Znajdź kogoś, kto był na koncercie w tym roku",
+  "Zrób zdjęcie z kimś, kogo dziś poznałeś",
+  "Znajdź osobę z takim samym kolorem butów",
+  "Poznaj kogoś, kto ma zwierzaka",
+  "Znajdź kogoś, kto pije kawę bez cukru",
+  "Zdobądź poradę życiową od nieznajomego",
+  "Znajdź osobę, która była za granicą w tym roku",
+  "Zrób grupowe zdjęcie z 4 osobami",
+  "Znajdź kogoś, kto gra na instrumencie",
+  "Poznaj osobę o tym samym znaku zodiaku",
+  "Znajdź kogoś, kto biegał w maratonie",
+  "Zdobądź rekomendację dobrej książki",
+  "Znajdź osobę, która lubi to samo jedzenie co Ty",
+  "Naucz się nowego słowa od kogoś",
+  "Znajdź kogoś, kto zna dobry żart",
+  "Poznaj osobę pracującą w innej branży",
+  "Zrób zdjęcie czegoś w kolorze żółtym",
+  "Znajdź kogoś, kto był tu pierwszy raz",
+  "Znajdź osobę, która lubi ten sam serial",
+  "Zdobądź high-five od 3 różnych osób",
+  "Poznaj kogoś, kto ma na imię na tę samą literę co Ty",
+  "Znajdź osobę, która wstała dziś przed 7:00",
+  "Zdobądź komplement i oddaj komplement",
+];
+
+/* =========================================================================
+   2) POMOCNICZE
+   ========================================================================= */
+const $ = (s)=>document.querySelector(s);
+const N = CONFIG.GRID;
+const CELLS = N*N;
+const FREE_IDX = CONFIG.FREE_CENTER ? Math.floor(CELLS/2) : -1;
+
+function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show");
+  clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove("show"),2600); }
+
+function show(id){ ["screen-locked","screen-join","screen-game","screen-admin"]
+  .forEach(s=>$("#"+s).classList.toggle("hidden", s!==id)); }
+
+function shuffle(a){ a=a.slice(); for(let i=a.length-1;i>0;i--){const j=(Math.random()*(i+1))|0;[a[i],a[j]]=[a[j],a[i]];} return a; }
+
+/* Buduje planszę: losowe zadania; środek = GRATIS jeśli włączone */
+function makeBoard(){
+  const need = CONFIG.FREE_CENTER ? CELLS-1 : CELLS;
+  const picked = shuffle(TASKS).slice(0, need);
+  const board = []; let p=0;
+  for(let i=0;i<CELLS;i++){
+    if(i===FREE_IDX) board.push("★ GRATIS");
+    else board.push(picked[p++] ?? "Zadanie");
+  }
+  return board;
+}
+
+/* Wszystkie linie (wiersze, kolumny, przekątne) jako listy indeksów */
+function allLines(){
+  const L=[];
+  for(let r=0;r<N;r++) L.push(Array.from({length:N},(_,c)=>r*N+c));      // wiersze
+  for(let c=0;c<N;c++) L.push(Array.from({length:N},(_,r)=>r*N+c));      // kolumny
+  L.push(Array.from({length:N},(_,i)=>i*N+i));                            // \
+  L.push(Array.from({length:N},(_,i)=>i*N+(N-1-i)));                      // /
+  return L;
+}
+const LINES = allLines();
+
+/* Zbiór zaliczonych indeksów (marks + darmowe pole) */
+function markedSet(marks){
+  const s = new Set(Object.keys(marks||{}).map(Number));
+  if(FREE_IDX>=0) s.add(FREE_IDX);
+  return s;
+}
+/* Ile pól brakuje do najbliższego bingo (0 = bingo) */
+function toGo(marks){
+  const s = markedSet(marks);
+  let best = N;
+  for(const line of LINES){
+    const miss = line.reduce((a,i)=>a+(s.has(i)?0:1),0);
+    if(miss<best) best=miss;
+  }
+  return best;
+}
+function markedCount(marks){ return Object.keys(marks||{}).length; }
+
+/* Kompresja zdjęcia po stronie przeglądarki (mniejszy rozmiar = mniej miejsca) */
+async function compressImage(file, maxDim=1280, quality=0.72){
+  const bmp = await createImageBitmap(file);
+  let {width,height}=bmp;
+  const m=Math.max(width,height);
+  if(m>maxDim){ const s=maxDim/m; width=Math.round(width*s); height=Math.round(height*s); }
+  const cv=document.createElement("canvas"); cv.width=width; cv.height=height;
+  cv.getContext("2d").drawImage(bmp,0,0,width,height);
+  return await new Promise(res=>cv.toBlob(res,"image/jpeg",quality));
+}
+function blobToDataURL(b){ return new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(b);}); }
+
+/* SVG pieczątki (różowy "ZROBIONE") — z lekkim losowym obrotem */
+function stampSVG(){
+  const rot = (Math.random()*10-5).toFixed(1);
+  return `<div class="stamp" style="--rot:${rot}deg">
+    <svg viewBox="0 0 100 100" aria-hidden="true">
+      <circle cx="50" cy="50" r="44" fill="none" stroke="var(--pink)" stroke-width="4"/>
+      <circle cx="50" cy="50" r="36" fill="none" stroke="var(--pink)" stroke-width="2"/>
+      <path d="M34 51 l11 12 l22 -26" fill="none" stroke="var(--pink)" stroke-width="7"
+            stroke-linecap="round" stroke-linejoin="round"/>
+    </svg></div>`;
+}
+
+/* =========================================================================
+   3) WARSTWA DANYCH — jeden interfejs, dwie implementacje
+   ========================================================================= */
+const LIVE = !!(CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY && window.supabase);
+let sb = null;
+if(LIVE){ sb = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY); }
+
+/* --- Tryb LIVE (Supabase) --- */
+const SupaDB = {
+  async createPlayer(name, board){
+    const {data,error} = await sb.from("players")
+      .insert({name, board, marks:{}}).select().single();
+    if(error) throw error; return data;
+  },
+  async getPlayer(id){
+    const {data,error} = await sb.from("players").select("*").eq("id",id).maybeSingle();
+    if(error) throw error; return data;
+  },
+  async saveMarks(id, marks){
+    const {error} = await sb.from("players").update({marks, updated_at:new Date().toISOString()}).eq("id",id);
+    if(error) throw error;
+  },
+  async uploadPhoto(blob, id, idx){
+    const path = `${id}/${idx}-${Date.now()}.jpg`;
+    const {error} = await sb.storage.from("proofs").upload(path, blob, {contentType:"image/jpeg",upsert:true});
+    if(error) throw error;
+    return sb.storage.from("proofs").getPublicUrl(path).data.publicUrl;
+  },
+  async listPlayers(){
+    const {data,error} = await sb.from("players").select("*").order("updated_at",{ascending:false});
+    if(error) throw error; return data||[];
+  }
+};
+
+/* --- Tryb DEMO (localStorage) — do testów bez konfiguracji --- */
+const KEY="bingo_demo_players";
+const LocalDB = {
+  _all(){ try{return JSON.parse(localStorage.getItem(KEY))||{}}catch{return {}} },
+  _save(o){ localStorage.setItem(KEY, JSON.stringify(o)); },
+  async createPlayer(name, board){
+    const id="p_"+Math.random().toString(36).slice(2,10);
+    const p={id,name,board,marks:{},updated_at:new Date().toISOString()};
+    const all=this._all(); all[id]=p; this._save(all); return p;
+  },
+  async getPlayer(id){ return this._all()[id]||null; },
+  async saveMarks(id, marks){ const all=this._all(); if(all[id]){all[id].marks=marks;all[id].updated_at=new Date().toISOString();this._save(all);} },
+  async uploadPhoto(blob){ return await blobToDataURL(blob); }, // demo: zapis jako data URL
+  async listPlayers(){ return Object.values(this._all()).sort((a,b)=>b.updated_at.localeCompare(a.updated_at)); }
+};
+
+const DB = LIVE ? SupaDB : LocalDB;
+
+/* =========================================================================
+   4) ROUTING — kto widzi co (na podstawie tokena z linku ?t=...)
+   ========================================================================= */
+const params = new URLSearchParams(location.search);
+const token = params.get("t");
+
+function boot(){
+  if(token === CONFIG.ADMIN_TOKEN){
+    if(CONFIG.ADMIN_PASSWORD){
+      const pw = prompt("Hasło do panelu admina:");
+      if(pw !== CONFIG.ADMIN_PASSWORD){ show("screen-locked"); return; }
+    }
+    initAdmin();
+  } else if(token === CONFIG.PLAYER_TOKEN){
+    initPlayer();
+  } else {
+    show("screen-locked");
+  }
+}
+
+/* =========================================================================
+   5) GRACZ
+   ========================================================================= */
+let ME = null;          // {id,name,board,marks}
+let hadBingo = false;
+
+async function initPlayer(){
+  const savedId = localStorage.getItem("bingo_player_id");
+  if(savedId){
+    try{
+      const p = await DB.getPlayer(savedId);
+      if(p){ ME=p; enterGame(); return; }
+    }catch(e){ console.warn(e); }
+  }
+  show("screen-join");
+  $("#joinName").focus();
+}
+
+$("#joinBtn").addEventListener("click", joinGame);
+$("#joinName").addEventListener("keydown", e=>{ if(e.key==="Enter") joinGame(); });
+
+async function joinGame(){
+  const name = $("#joinName").value.trim();
+  if(name.length < 2){ toast("Wpisz imię i nazwisko"); return; }
+  $("#joinBtn").disabled=true; $("#joinBtn").textContent="Tworzę planszę…";
+  try{
+    ME = await DB.createPlayer(name, makeBoard());
+    localStorage.setItem("bingo_player_id", ME.id);
+    enterGame();
+  }catch(e){
+    console.error(e); toast("Nie udało się dołączyć. Sprawdź połączenie.");
+    $("#joinBtn").disabled=false; $("#joinBtn").textContent="Wchodzę do gry →";
+  }
+}
+
+function enterGame(){
+  show("screen-game");
+  $("#gName").textContent = ME.name;
+  hadBingo = toGo(ME.marks)===0;
+  renderBoard();
+  updateProgress();
+}
+
+function renderBoard(){
+  const b=$("#board");
+  b.style.gridTemplateColumns=`repeat(${N},1fr)`;
+  b.innerHTML="";
+  const marks = ME.marks||{};
+  ME.board.forEach((task,i)=>{
+    const isFree = i===FREE_IDX;
+    const isMarked = isFree || (i in marks);
+    const el=document.createElement("div");
+    el.className="tile"+(isMarked?" marked":"")+(isFree?" free":"");
+    el.innerHTML = `<div class="task">${escapeHtml(task)}</div>`
+      + (isMarked ? stampSVG() : "")
+      + ((i in marks && (marks[i].note || marks[i].photo_url)) ? `<div class="has-proof">📎</div>` : "");
+    if(!isFree) el.addEventListener("click", ()=>openSheet(i));
+    b.appendChild(el);
+  });
+}
+
+function updateProgress(){
+  const g = toGo(ME.marks);
+  const chip=$("#gChip");
+  $("#gToGo").textContent = g===0 ? "★" : g;
+  chip.classList.toggle("done", g===0);
+  $("#gSub").textContent = g===0 ? "Masz BINGO!" : `Zaliczone: ${markedCount(ME.marks)}/${CELLS-(FREE_IDX>=0?1:0)}`;
+}
+
+/* ---- Bottom sheet: dodawanie dowodu ---- */
+let sheetIdx = null;
+let pendingBlob = null;   // skompresowane zdjęcie czekające na zapis
+
+function openSheet(i){
+  sheetIdx=i; pendingBlob=null;
+  const marks=ME.marks||{};
+  const existing = marks[i];
+  $("#sTask").textContent = ME.board[i];
+  $("#sNote").value = existing?.note || "";
+  resetPhotoUI();
+  if(existing?.photo_url){ showPhotoPreview(existing.photo_url); }
+  $("#sState").textContent = existing ? "Już zaliczone — możesz zaktualizować dowód." : "Dodaj krótki dowód i przybij pieczątkę.";
+  $("#sUndo").classList.toggle("hidden", !existing);
+  $("#sStamp").innerHTML = existing ? "✔ Zapisz zmiany" : "✔ Przybij pieczątkę";
+  $("#sheetOverlay").classList.add("open");
+}
+function closeSheet(){ $("#sheetOverlay").classList.remove("open"); sheetIdx=null; pendingBlob=null; }
+
+$("#sCancel").addEventListener("click", closeSheet);
+$("#sheetOverlay").addEventListener("click", e=>{ if(e.target===$("#sheetOverlay")) closeSheet(); });
+
+$("#sPhotoDrop").addEventListener("click", ()=>$("#sPhotoInput").click());
+$("#sPhotoInput").addEventListener("change", async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  $("#sPhotoDrop").textContent="Przetwarzam zdjęcie…";
+  try{
+    pendingBlob = await compressImage(f);
+    showPhotoPreview(await blobToDataURL(pendingBlob));
+  }catch(err){ console.error(err); toast("Nie udało się wczytać zdjęcia"); resetPhotoUI(); }
+});
+
+function resetPhotoUI(){
+  const wrap=$("#sPhotoWrap");
+  wrap.querySelector(".photo-preview")?.remove();
+  $("#sPhotoDrop").classList.remove("hidden");
+  $("#sPhotoDrop").textContent="📸 Dotknij, aby zrobić / wybrać zdjęcie";
+}
+function showPhotoPreview(src){
+  const wrap=$("#sPhotoWrap");
+  $("#sPhotoDrop").classList.add("hidden");
+  wrap.querySelector(".photo-preview")?.remove();
+  const div=document.createElement("div");
+  div.className="photo-preview";
+  div.innerHTML=`<img src="${src}" alt="dowód"/><button class="remove" type="button">Usuń</button>`;
+  div.querySelector(".remove").addEventListener("click", ()=>{ pendingBlob=null; resetPhotoUI(); });
+  wrap.appendChild(div);
+}
+
+$("#sStamp").addEventListener("click", async ()=>{
+  if(sheetIdx===null) return;
+  const i=sheetIdx;
+  $("#sStamp").disabled=true; const orig=$("#sStamp").innerHTML; $("#sStamp").textContent="Zapisuję…";
+  try{
+    const marks = {...(ME.marks||{})};
+    let photo_url = marks[i]?.photo_url || null;
+    if(pendingBlob){ photo_url = await DB.uploadPhoto(pendingBlob, ME.id, i); }
+    marks[i] = { note: $("#sNote").value.trim(), photo_url, at:new Date().toISOString() };
+    await DB.saveMarks(ME.id, marks);
+    ME.marks = marks;
+    closeSheet(); renderBoard(); updateProgress();
+    if(!hadBingo && toGo(ME.marks)===0){ hadBingo=true; $("#celebrate").classList.add("show"); }
+  }catch(e){ console.error(e); toast("Nie udało się zapisać. Spróbuj ponownie.");
+    $("#sStamp").disabled=false; $("#sStamp").innerHTML=orig; }
+});
+
+$("#sUndo").addEventListener("click", async ()=>{
+  if(sheetIdx===null) return;
+  const marks={...(ME.marks||{})}; delete marks[sheetIdx];
+  try{ await DB.saveMarks(ME.id, marks); ME.marks=marks;
+    hadBingo = toGo(ME.marks)===0;
+    closeSheet(); renderBoard(); updateProgress(); toast("Cofnięto zaliczenie");
+  }catch(e){ console.error(e); toast("Nie udało się cofnąć"); }
+});
+
+/* =========================================================================
+   6) ADMIN
+   ========================================================================= */
+let adminTimer=null;
+
+function initAdmin(){
+  show("screen-admin");
+  $("#modeBadge").textContent = LIVE ? "LIVE" : "DEMO";
+  $("#modeBadge").style.background = LIVE ? "var(--green)" : "var(--pink)";
+
+  // Link + QR dla graczy
+  const playerUrl = location.origin + location.pathname + "?t=" + encodeURIComponent(CONFIG.PLAYER_TOKEN);
+  $("#joinLink").textContent = playerUrl;
+  if(window.QRCode){
+    QRCode.toCanvas(playerUrl, {margin:1, width:180}, (err,canvas)=>{
+      if(!err){ const box=$("#qrbox"); box.innerHTML=""; box.appendChild(canvas); }
+    });
+  }
+
+  $("#refreshBtn").addEventListener("click", loadLeaderboard);
+  loadLeaderboard();
+  // Automatyczne odświeżanie co 6 s (tylko w trybie LIVE ma sens między urządzeniami)
+  adminTimer = setInterval(loadLeaderboard, 6000);
+
+  $("#pmClose").addEventListener("click", ()=>$("#pmodal").classList.remove("open"));
+  $("#pmodal").addEventListener("click", e=>{ if(e.target===$("#pmodal")) $("#pmodal").classList.remove("open"); });
+}
+
+let PLAYERS=[];
+async function loadLeaderboard(){
+  try{ PLAYERS = await DB.listPlayers(); }
+  catch(e){ console.error(e); toast("Błąd pobierania danych"); return; }
+
+  const rows = PLAYERS.map(p=>({p, count:markedCount(p.marks), togo:toGo(p.marks)}))
+    .sort((a,b)=> a.togo-b.togo || b.count-a.count);
+
+  $("#stPlayers").textContent = PLAYERS.length;
+  $("#stBingo").textContent   = rows.filter(r=>r.togo===0).length;
+  $("#stClose").textContent   = rows.filter(r=>r.togo>0 && r.togo<=1).length;
+
+  const body=$("#lbBody"); body.innerHTML="";
+  $("#lbEmpty").classList.toggle("hidden", rows.length>0);
+
+  rows.forEach((r,idx)=>{
+    const tr=document.createElement("tr");
+    let pill = r.togo===0 ? `<span class="pill bingo">Bingo</span>`
+             : r.togo<=1  ? `<span class="pill close">Blisko</span>`
+             : `<span class="pill">Gra</span>`;
+    tr.innerHTML = `<td class="rank">${idx+1}</td>
+      <td><strong>${escapeHtml(r.p.name)}</strong></td>
+      <td class="c mono">${r.count}</td>
+      <td class="c to-go">${r.togo===0?"★":r.togo}</td>
+      <td class="c">${pill}</td>`;
+    tr.addEventListener("click", ()=>openPlayer(r.p));
+    body.appendChild(tr);
+  });
+}
+
+function openPlayer(p){
+  $("#pmName").textContent = p.name;
+  const c=markedCount(p.marks), g=toGo(p.marks);
+  $("#pmMeta").textContent = g===0
+    ? `MA BINGO · zaliczonych pól: ${c}`
+    : `Do bingo brakuje: ${g} · zaliczonych pól: ${c}`;
+
+  const wrap=$("#pmProofs"); wrap.innerHTML="";
+  const marks=p.marks||{};
+  const keys=Object.keys(marks).map(Number).sort((a,b)=>a-b);
+  if(keys.length===0){ wrap.innerHTML=`<div class="empty">Ten uczestnik nie zaliczył jeszcze żadnego pola.</div>`; }
+  keys.forEach(i=>{
+    const m=marks[i];
+    const div=document.createElement("div"); div.className="proof-item";
+    div.innerHTML = `<div class="pt"><span class="mk">✔</span><span>${escapeHtml(p.board[i]||"Zadanie")}</span></div>`
+      + (m.note ? `<div class="pnote">${escapeHtml(m.note)}</div>`
+                : `<div class="pnote none">brak opisu</div>`)
+      + (m.photo_url ? `<img src="${m.photo_url}" alt="dowód" loading="lazy"/>` : "");
+    wrap.appendChild(div);
+  });
+  $("#pmodal").classList.add("open");
+}
+
+/* =========================================================================
+   7) DROBIAZGI
+   ========================================================================= */
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+boot();
+</script>
+</body>
+</html>
