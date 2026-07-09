@@ -37,6 +37,7 @@
 
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
+.photo-input{position:absolute;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;}
 body{
   font-family:"IBM Plex Sans",system-ui,sans-serif;
   background:var(--paper);
@@ -318,8 +319,8 @@ textarea{min-height:84px;resize:vertical}
     <div style="height:14px"></div>
     <label class="field">Zdjęcie-dowód (opcjonalnie)</label>
     <div id="sPhotoWrap">
-      <div class="photo-drop" id="sPhotoDrop">📸 Dotknij, aby zrobić / wybrać zdjęcie</div>
-      <input type="file" id="sPhotoInput" accept="image/*" capture="environment" class="hidden" />
+      <label class="photo-drop" id="sPhotoDrop" for="sPhotoInput">📸 Dotknij, aby zrobić / wybrać zdjęcie</label>
+      <input type="file" id="sPhotoInput" accept="image/*" class="photo-input" />
     </div>
 
     <div style="height:20px"></div>
@@ -686,14 +687,14 @@ function openSheet(i){
   $("#sState").textContent = existing ? "Już zaliczone — możesz zaktualizować dowód." : "Dodaj krótki dowód i przybij pieczątkę.";
   $("#sUndo").classList.toggle("hidden", !existing);
   $("#sStamp").innerHTML = existing ? "✔ Zapisz zmiany" : "✔ Przybij pieczątkę";
+  $("#sStamp").disabled = false;
   $("#sheetOverlay").classList.add("open");
 }
-function closeSheet(){ $("#sheetOverlay").classList.remove("open"); sheetIdx=null; pendingBlob=null; }
+function closeSheet(){ $("#sheetOverlay").classList.remove("open"); sheetIdx=null; pendingBlob=null; $("#sStamp").disabled = false; }
 
 $("#sCancel").addEventListener("click", closeSheet);
 $("#sheetOverlay").addEventListener("click", e=>{ if(e.target===$("#sheetOverlay")) closeSheet(); });
 
-$("#sPhotoDrop").addEventListener("click", ()=>$("#sPhotoInput").click());
 $("#sPhotoInput").addEventListener("change", async e=>{
   const f=e.target.files[0]; if(!f) return;
   $("#sPhotoDrop").textContent="Przetwarzam zdjęcie…";
@@ -708,6 +709,7 @@ function resetPhotoUI(){
   wrap.querySelector(".photo-preview")?.remove();
   $("#sPhotoDrop").classList.remove("hidden");
   $("#sPhotoDrop").textContent="📸 Dotknij, aby zrobić / wybrać zdjęcie";
+  $("#sPhotoInput").value = "";
 }
 function showPhotoPreview(src){
   const wrap=$("#sPhotoWrap");
