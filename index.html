@@ -675,8 +675,10 @@ function updateProgress(){
 /* ---- Bottom sheet: dodawanie dowodu ---- */
 let sheetIdx = null;
 let pendingBlob = null;   // skompresowane zdjęcie czekające na zapis
+let stampEnableTimer = null;
 
 function openSheet(i){
+  clearTimeout(stampEnableTimer); stampEnableTimer = null;
   sheetIdx=i; pendingBlob=null;
   const marks=ME.marks||{};
   const existing = marks[i];
@@ -690,7 +692,7 @@ function openSheet(i){
   $("#sStamp").disabled = false;
   $("#sheetOverlay").classList.add("open");
 }
-function closeSheet(){ $("#sheetOverlay").classList.remove("open"); sheetIdx=null; pendingBlob=null; $("#sStamp").disabled = false; }
+function closeSheet(){ $("#sheetOverlay").classList.remove("open"); sheetIdx=null; pendingBlob=null; clearTimeout(stampEnableTimer); stampEnableTimer = null; $("#sStamp").disabled = false; }
 
 $("#sCancel").addEventListener("click", closeSheet);
 $("#sheetOverlay").addEventListener("click", e=>{ if(e.target===$("#sheetOverlay")) closeSheet(); });
@@ -726,6 +728,7 @@ $("#sStamp").addEventListener("click", async ()=>{
   if(sheetIdx===null) return;
   const i=sheetIdx;
   $("#sStamp").disabled=true; const orig=$("#sStamp").innerHTML; $("#sStamp").textContent="Zapisuję…";
+  stampEnableTimer = setTimeout(()=>{ $("#sStamp").disabled = false; }, 5000);
   try{
     const marks = {...(ME.marks||{})};
     let photo_url = marks[i]?.photo_url || null;
@@ -736,7 +739,8 @@ $("#sStamp").addEventListener("click", async ()=>{
     closeSheet(); renderBoard(); updateProgress();
     if(!hadBingo && toGo(ME.marks)===0){ hadBingo=true; $("#celebrate").classList.add("show"); }
   }catch(e){ console.error(e); toast("Nie udało się zapisać. Spróbuj ponownie.");
-    $("#sStamp").disabled=false; $("#sStamp").innerHTML=orig; }
+    clearTimeout(stampEnableTimer); stampEnableTimer = null;
+    $("#sStamp").disabled=false; }
 });
 
 $("#sUndo").addEventListener("click", async ()=>{
