@@ -759,11 +759,10 @@ function initAdmin(){
   // Link + QR dla graczy
   const playerUrl = location.origin + location.pathname + "?t=" + encodeURIComponent(CONFIG.PLAYER_TOKEN);
   $("#joinLink").textContent = playerUrl;
-  if(window.QRCode){
-    QRCode.toCanvas(playerUrl, {margin:1, width:180}, (err,canvas)=>{
-      if(!err){ const box=$("#qrbox"); box.innerHTML=""; box.appendChild(canvas); }
-    });
-  }
+  const qrImg = new Image();
+  qrImg.src = "https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=" + encodeURIComponent(playerUrl);
+  qrImg.alt = "Kod QR dla graczy";
+  const box = $("#qrbox"); box.innerHTML = ""; box.appendChild(qrImg);
 
   $("#refreshBtn").addEventListener("click", loadLeaderboard);
   loadLeaderboard();
